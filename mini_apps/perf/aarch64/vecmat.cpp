@@ -19,7 +19,7 @@
 
 namespace {
 
-static void pack_rhs(float *packed, float *b, float *bias, unsigned n_dim, unsigned k_dim, unsigned block_dim) {
+static void fp32_pack_rhs(float *packed, float *b, float *bias, unsigned n_dim, unsigned k_dim, unsigned block_dim) {
     const unsigned n_tiles = (n_dim + block_dim - 1) / block_dim;
     for (unsigned t = 0; t < n_tiles; ++t) {
         unsigned n_start = t * block_dim;
@@ -43,7 +43,7 @@ static void pack_rhs(float *packed, float *b, float *bias, unsigned n_dim, unsig
 namespace {
 
 // Weights b are K x N non-transposed (k outer, n inner).
-static void vecmat_ref(float *a, float *b, float *c, unsigned n, unsigned k, float *bias,
+static void fp32_vecmat_ref(float *a, float *b, float *c, unsigned n, unsigned k, float *bias,
                        float clamp_min, float clamp_max) {
     for (unsigned n_idx = 0; n_idx < n; ++n_idx) {
         c[n_idx] = bias[n_idx];
@@ -60,7 +60,7 @@ namespace {
 #ifdef __ARM_FEATURE_SME
 __arm_locally_streaming
 #endif
-void vecmat_ripple(float *a, float *b, float *c, unsigned n, unsigned k,
+void fp32_vecmat_ripple(float *a, float *b, float *c, unsigned n, unsigned k,
                    float clamp_min, float clamp_max) {
     const size_t block_dim = TILE_SIZE * 2;
     ripple_block_t B = ripple_set_block_shape(VEC, block_dim);
@@ -117,15 +117,15 @@ public:
         for (unsigned i = 0; i < K; ++i) {
             Bias[i] = -1 + randn() * 2;
         }
-        pack_rhs(B_packed, B, Bias, N, K, BLOCK_DIM);
-        vecmat_ref(A, B, Ref, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
+        fp32_pack_rhs(B_packed, B, Bias, N, K, BLOCK_DIM);
+        fp32_vecmat_ref(A, B, Ref, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
     }
 
     void run(unsigned) override {
         if (KT == KernelT::Reference)
-            vecmat_ref(A, B, C, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
+            fp32_vecmat_ref(A, B, C, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
         if (KT == KernelT::RippleOpt)
-            vecmat_ripple(A, B_packed, C, N, K, CLAMP_MIN, CLAMP_MAX);
+            fp32_vecmat_ripple(A, B_packed, C, N, K, CLAMP_MIN, CLAMP_MAX);
     }
     bool verify() const override {
         return equal(1e-5, C, Ref); 
@@ -133,7 +133,7 @@ public:
 
 };
 
-DefineTest<VecmatTest<Reference>> VecmatTestInstance_0("vecmat.ref");
-DefineTest<VecmatTest<RippleOpt>> VecmatTestInstance_1("vecmat.ripple");
+DefineTest<VecmatTest<Reference>> VecmatTestInstance_0("fp32_vecmat.ref");
+DefineTest<VecmatTest<RippleOpt>> VecmatTestInstance_1("fp32_vecmat.ripple");
 
 } // namespace ripple_test_suite
