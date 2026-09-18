@@ -98,8 +98,7 @@ enum KernelT {
   RippleOpt,
 };
 
-template <KernelT KT> class VecmatTest : public Test {
-    static constexpr unsigned N = 1000, K = 1000;
+template <KernelT KT, unsigned N, unsigned K> class VecmatTest : public Test {
     static constexpr unsigned N_tiles = (N + BLOCK_DIM - 1) / BLOCK_DIM;
     static constexpr float CLAMP_MIN = -65504.0;
     static constexpr float CLAMP_MAX = 65504.0;
@@ -133,7 +132,11 @@ public:
 
 };
 
-DefineTest<VecmatTest<Reference>> VecmatTestInstance_0("fp32_vecmat.ref");
-DefineTest<VecmatTest<RippleOpt>> VecmatTestInstance_1("fp32_vecmat.ripple");
+DefineTest<VecmatTest<Reference, 1000, 1000>> VecmatTestInstance_0("fp32_vecmat_1000x1000.ref");
+DefineTest<VecmatTest<Reference, 900, 1100>> VecmatTestInstance_1("fp32_vecmat_900x1100.ref");
+DefineTest<VecmatTest<Reference, 1100, 900>> VecmatTestInstance_2("fp32_vecmat_1100x900.ref");
+DefineTest<VecmatTest<RippleOpt, 1000, 1000>> VecmatTestInstance_3("fp32_vecmat_1000x1000.ripple");
+DefineTest<VecmatTest<RippleOpt, 900, 1100>> VecmatTestInstance_4("fp32_vecmat_900x1100.ripple");
+DefineTest<VecmatTest<RippleOpt, 1100, 900>> VecmatTestInstance_5("fp32_vecmat_1100x900.ripple");
 
 } // namespace ripple_test_suite
