@@ -38,10 +38,6 @@ static void fp32_pack_rhs(float *packed, float *b, float *bias, unsigned n_dim, 
     }
 }
 
-} // namespace
-
-namespace {
-
 // Weights b are K x N non-transposed (k outer, n inner).
 static void fp32_vecmat_ref(float *a, float *b, float *c, unsigned n, unsigned k, float *bias,
                        float clamp_min, float clamp_max) {
@@ -52,10 +48,6 @@ static void fp32_vecmat_ref(float *a, float *b, float *c, unsigned n, unsigned k
         c[n_idx] = std::max(clamp_min, std::min(clamp_max, c[n_idx]));
     }
 }
-
-} // namespace
-
-namespace {
 
 #ifdef __ARM_FEATURE_SME
 __arm_locally_streaming
@@ -100,10 +92,11 @@ enum KernelT {
 
 template <KernelT KT, unsigned N, unsigned K> class VecmatTest : public Test {
     static constexpr unsigned N_tiles = (N + BLOCK_DIM - 1) / BLOCK_DIM;
-    static constexpr float CLAMP_MIN = -65504.0;
-    static constexpr float CLAMP_MAX = 65504.0;
-    float A[K], B[K * N], C[N], Ref[N], Bias[K];
-    float B_packed[N_tiles * (K - 1) * BLOCK_DIM]{};
+    float CLAMP_MIN = randn() * 65504.0 - 65504.0;
+    float CLAMP_MAX = randn() * 65504.0;
+    float A[K], B[K * N], C[N], Ref[N], Bias[N];
+    // Packed array has N_tiles, each tile has K+1 rows * BLOCK_DIM elts
+    float B_packed[N_tiles * (K + 1) * BLOCK_DIM]{};
 
 public:
     VecmatTest(TestFramework &TestFramework) : Test(TestFramework) {
@@ -116,7 +109,9 @@ public:
         for (unsigned i = 0; i < K; ++i) {
             Bias[i] = -1 + randn() * 2;
         }
-        fp32_pack_rhs(B_packed, B, Bias, N, K, BLOCK_DIM);
+        if (KT != KernelT::Reference)
+            fp32_pack_rhs(B_packed, B, Bias, N, K, BLOCK_DIM);
+
         fp32_vecmat_ref(A, B, Ref, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
     }
 
@@ -132,11 +127,13 @@ public:
 
 };
 
-DefineTest<VecmatTest<Reference, 1000, 1000>> VecmatTestInstance_0("fp32_vecmat_1000x1000.ref");
-DefineTest<VecmatTest<Reference, 900, 1100>> VecmatTestInstance_1("fp32_vecmat_900x1100.ref");
-DefineTest<VecmatTest<Reference, 1100, 900>> VecmatTestInstance_2("fp32_vecmat_1100x900.ref");
-DefineTest<VecmatTest<RippleOpt, 1000, 1000>> VecmatTestInstance_3("fp32_vecmat_1000x1000.ripple");
-DefineTest<VecmatTest<RippleOpt, 900, 1100>> VecmatTestInstance_4("fp32_vecmat_900x1100.ripple");
-DefineTest<VecmatTest<RippleOpt, 1100, 900>> VecmatTestInstance_5("fp32_vecmat_1100x900.ripple");
+DefineTest<VecmatTest<RippleOpt, 1000, 1000>> VecmatTestInstance_1("fp32_vecmat_1000x1000.ripple");
+DefineTest<VecmatTest<RippleOpt, 900, 1100>> VecmatTestInstance_2("fp32_vecmat_900x1100.ripple");
+DefineTest<VecmatTest<RippleOpt, 1100, 900>> VecmatTestInstance_3("fp32_vecmat_1100x900.ripple");
+DefineTest<VecmatTest<RippleOpt, 20, 20>> VecmatTestInstance_4("fp32_vecmat_20x20.ripple");
+DefineTest<VecmatTest<RippleOpt, 10, 30>> VecmatTestInstance_5("fp32_vecmat_10x30.ripple");
+DefineTest<VecmatTest<RippleOpt, 30, 10>> VecmatTestInstance_6("fp32_vecmat_30x10.ripple");
+DefineTest<VecmatTest<RippleOpt, 512, 1>> VecmatTestInstance_7("fp32_vecmat_512x1.ripple");
+DefineTest<VecmatTest<RippleOpt, 1, 512>> VecmatTestInstance_8("fp32_vecmat_1x512.ripple");
 
 } // namespace ripple_test_suite
