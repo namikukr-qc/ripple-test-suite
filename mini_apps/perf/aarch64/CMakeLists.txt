@@ -36,6 +36,18 @@ add_test_app(
 target_compile_options(aarch64_perf_tests PRIVATE ${RIPPLE_SME_SVE_FLAGS})
 target_include_directories(aarch64_perf_tests PRIVATE ${RIPPLE_TEST_SUITE_INCLUDE_DIR})
 
+# Add GEMV tests
+set(KLEIDIAI_F32_GEMV_SOURCES
+  ${kleidiai_SOURCE_DIR}/kai/kai_common_sme_asm.S
+  ${kleidiai_SOURCE_DIR}/kai/ukernels/matmul/pack/kai_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme.c
+  ${kleidiai_SOURCE_DIR}/kai/ukernels/matmul/pack/kai_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme_asm.S
+)
+
+# Ripple source files
+set(RIPPLE_GEMV_SOURCES
+  vecmat.cpp
+)
+
 # Only add GEMM tests if ripple_sme_veclib.h is available
 if(HAVE_RIPPLE_SME_VECLIB)
   message(STATUS "ripple_sme_veclib.h found - enabling SME tests")
@@ -73,12 +85,17 @@ if(HAVE_RIPPLE_SME_VECLIB)
     gemm_i8_test.cpp
   )
 
-  target_sources(aarch64_perf_tests PRIVATE
-    ${KLEIDIAI_F32_SOURCES}
-    ${KLEIDIAI_I8_SOURCES}
-    ${RIPPLE_GEMM_SOURCES}
-    ${RIPPLE_GEMM_I8_SOURCES}
-  )
-  target_include_directories(aarch64_perf_tests PRIVATE ${kleidiai_SOURCE_DIR})
 else()
   message(STATUS "ripple_sme_veclib.h not found - skipping SME tests")
+
+target_include_directories(aarch64_perf_tests PRIVATE ${kleidiai_SOURCE_DIR})
+target_compile_options(aarch64_perf_tests PRIVATE -fenable-ripple)
+
+target_sources(aarch64_perf_tests PRIVATE
+  ${KLEIDIAI_F32_SOURCES}
+  ${KLEIDIAI_I8_SOURCES}
+  ${RIPPLE_GEMM_SOURCES}
+  ${RIPPLE_GEMM_I8_SOURCES}
+  ${KLEIDIAI_F32_GEMV_SOURCES}
+  ${RIPPLE_GEMV_SOURCES}
+)
