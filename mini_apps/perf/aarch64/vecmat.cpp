@@ -13,33 +13,17 @@
 
 #include <ripple-test-suite/ripple-test-suite.h>
 
+#include "kai/ukernels/matmul/pack/kai_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme.h"
+#include "kai/ukernels/matmul/matmul_clamp_f32_f32_f32p/kai_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla.h"
+
 #define TILE_SIZE 16
 #define BLOCK_DIM TILE_SIZE*2
 #define VEC 0
+#define UNUSED 0
 
 namespace {
-
-static void fp32_pack_rhs(float *packed, float *b, float *bias, unsigned n_dim, unsigned k_dim, unsigned block_dim) {
-    const unsigned n_tiles = (n_dim + block_dim - 1) / block_dim;
-    for (unsigned t = 0; t < n_tiles; ++t) {
-        unsigned n_start = t * block_dim;
-        for (unsigned ni = 0; ni < block_dim; ++ni) {
-            unsigned n_idx = n_start + ni;
-            if (n_idx < n_dim)
-                packed[t * (k_dim + 1) * block_dim + ni] = bias[n_idx];
-        }
-        for (unsigned ki = 0; ki < k_dim; ++ki) {
-            for (unsigned ni = 0; ni < block_dim; ++ni) {
-                unsigned n_idx = n_start + ni;
-                if (n_idx < n_dim)
-                    packed[(t * (k_dim + 1) + 1 + ki) * block_dim + ni] = b[ki * n_dim + n_idx];
-            }
-        }
-    }
-}
-
 // Weights b are K x N non-transposed (k outer, n inner).
-static void fp32_vecmat_ref(float *a, float *b, float *c, unsigned n, unsigned k, float *bias,
+static void vecmat_f32_f32_f32_ref(float *a, float *b, float *c, unsigned n, unsigned k, float *bias,
                        float clamp_min, float clamp_max) {
     for (unsigned n_idx = 0; n_idx < n; ++n_idx) {
         c[n_idx] = bias[n_idx];
@@ -52,7 +36,7 @@ static void fp32_vecmat_ref(float *a, float *b, float *c, unsigned n, unsigned k
 #ifdef __ARM_FEATURE_SME
 __arm_locally_streaming
 #endif
-void fp32_vecmat_ripple(float *a, float *b, float *c, unsigned n, unsigned k,
+void ripple_vecmat_f32_f32_f32p_ssve_fmla(float *a, float *b, float *c, unsigned n, unsigned k,
                    float clamp_min, float clamp_max) {
     const size_t block_dim = TILE_SIZE * 2;
     ripple_block_t B = ripple_set_block_shape(VEC, block_dim);
@@ -61,18 +45,19 @@ void fp32_vecmat_ripple(float *a, float *b, float *c, unsigned n, unsigned k,
     // We tile across n, chunking it by block_dim.
     __builtin_prefetch(a, 0, /*locality*/ 2);
     for (size_t n_idx = 0; n_idx < n; n_idx += block_dim) {
-        size_t n_to_process = std::min(block_dim, n - n_idx); // could have an incomplete block.
+        // Could have an incomplete block.
+        size_t n_to_process = std::min(block_dim, n - n_idx);
         ripple_parallel(B, 0);
         for (size_t ti = 0; ti < n_to_process; ++ti) {
             // load bias
-            float tmp = __builtin_nontemporal_load(tile + ti);
+            float acc = __builtin_nontemporal_load(tile + ti);
             tile += block_dim;
             for (size_t k_idx = 0; k_idx < k; ++k_idx) {
-                tmp += a[k_idx] * tile[k_idx * block_dim + ti];
+                acc += a[k_idx] * tile[k_idx * block_dim + ti];
             }
             // clamp and store
-            tmp = std::max(clamp_min, std::min(clamp_max, tmp));
-            __builtin_nontemporal_store(tmp, c + n_idx + ti);
+            acc = std::max(clamp_min, std::min(clamp_max, acc));
+            __builtin_nontemporal_store(acc, c + n_idx + ti);
         }
         tile += stride;
         __builtin_prefetch(a, 0, /*locality*/ 2);
@@ -100,26 +85,36 @@ template <KernelT KT, unsigned N, unsigned K> class VecmatTest : public Test {
 
 public:
     VecmatTest(TestFramework &TestFramework) : Test(TestFramework) {
+        const size_t nr =
+            kai_get_nr_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla();
+        const size_t kr =
+            kai_get_kr_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla();
+        const size_t sr =
+            kai_get_sr_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla();
         for (unsigned i = 0; i < K; ++i) {
-            A[i] = -10 + randn() * 20;
+            A[i] = -100 + randn() * 200;
         }
         for (unsigned i = 0; i < N * K; ++i) {
-            B[i] = -10 + randn() * 20;
+            B[i] = -100 + randn() * 200;
         }
-        for (unsigned i = 0; i < K; ++i) {
-            Bias[i] = -1 + randn() * 2;
+        for (unsigned i = 0; i < N; ++i) {
+            Bias[i] = -10 + randn() * 20;
         }
-        if (KT != KernelT::Reference)
-            fp32_pack_rhs(B_packed, B, Bias, N, K, BLOCK_DIM);
+        kai_run_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme(
+                1, N, K, nr, kr, sr, N * sizeof(float), B, Bias,
+                nullptr, B_packed, 0, nullptr);
 
-        fp32_vecmat_ref(A, B, Ref, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
+        vecmat_f32_f32_f32_ref(A, B, Ref, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
     }
 
     void run(unsigned) override {
         if (KT == KernelT::Reference)
-            fp32_vecmat_ref(A, B, C, N, K, Bias, CLAMP_MIN, CLAMP_MAX);
+            kai_run_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla(
+                    1, N, K, A, UNUSED, B_packed, C, UNUSED, UNUSED,
+                    CLAMP_MIN, CLAMP_MAX);
         if (KT == KernelT::RippleOpt)
-            fp32_vecmat_ripple(A, B_packed, C, N, K, CLAMP_MIN, CLAMP_MAX);
+            ripple_vecmat_f32_f32_f32p_ssve_fmla(A, B_packed, C, N, K,
+                    CLAMP_MIN, CLAMP_MAX);
     }
     bool verify() const override {
         return equal(1e-5, C, Ref); 
@@ -128,12 +123,20 @@ public:
 };
 
 DefineTest<VecmatTest<RippleOpt, 1000, 1000>> VecmatTestInstance_1("fp32_vecmat_1000x1000.ripple");
+DefineTest<VecmatTest<Reference, 1000, 1000>> RefVecmatTestInstance_1("fp32_vecmat_1000x1000.reference");
 DefineTest<VecmatTest<RippleOpt, 900, 1100>> VecmatTestInstance_2("fp32_vecmat_900x1100.ripple");
+DefineTest<VecmatTest<Reference, 900, 1100>> RefVecmatTestInstance_2("fp32_vecmat_900x1100.reference");
 DefineTest<VecmatTest<RippleOpt, 1100, 900>> VecmatTestInstance_3("fp32_vecmat_1100x900.ripple");
+DefineTest<VecmatTest<Reference, 1100, 900>> RefVecmatTestInstance_3("fp32_vecmat_1100x900.reference");
 DefineTest<VecmatTest<RippleOpt, 20, 20>> VecmatTestInstance_4("fp32_vecmat_20x20.ripple");
+DefineTest<VecmatTest<Reference, 20, 20>> RefVecmatTestInstance_4("fp32_vecmat_20x20.reference");
 DefineTest<VecmatTest<RippleOpt, 10, 30>> VecmatTestInstance_5("fp32_vecmat_10x30.ripple");
+DefineTest<VecmatTest<Reference, 10, 30>> RefVecmatTestInstance_5("fp32_vecmat_10x30.reference");
 DefineTest<VecmatTest<RippleOpt, 30, 10>> VecmatTestInstance_6("fp32_vecmat_30x10.ripple");
+DefineTest<VecmatTest<Reference, 30, 10>> RefVecmatTestInstance_6("fp32_vecmat_30x10.reference");
 DefineTest<VecmatTest<RippleOpt, 512, 1>> VecmatTestInstance_7("fp32_vecmat_512x1.ripple");
+DefineTest<VecmatTest<Reference, 512, 1>> RefVecmatTestInstance_7("fp32_vecmat_512x1.reference");
 DefineTest<VecmatTest<RippleOpt, 1, 512>> VecmatTestInstance_8("fp32_vecmat_1x512.ripple");
+DefineTest<VecmatTest<Reference, 1, 512>> RefVecmatTestInstance_8("fp32_vecmat_1x512.reference");
 
 } // namespace ripple_test_suite
