@@ -41,11 +41,13 @@ set(KLEIDIAI_F32_GEMV_SOURCES
   ${kleidiai_SOURCE_DIR}/kai/kai_common_sme_asm.S
   ${kleidiai_SOURCE_DIR}/kai/ukernels/matmul/pack/kai_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme.c
   ${kleidiai_SOURCE_DIR}/kai/ukernels/matmul/pack/kai_rhs_pack_kxn_f32p2vlx1biasf32_f32_f32_sme_asm.S
+  ${kleidiai_SOURCE_DIR}/kai/ukernels/matmul/matmul_clamp_f32_f32_f32p/kai_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla.c
+  ${kleidiai_SOURCE_DIR}/kai/ukernels/matmul/matmul_clamp_f32_f32_f32p/kai_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla_asm.S
 )
 
 # Ripple source files
 set(RIPPLE_GEMV_SOURCES
-  vecmat.cpp
+  gemv_fp32_test.cpp
 )
 
 # Only add GEMM tests if ripple_sme_veclib.h is available
@@ -87,6 +89,7 @@ if(HAVE_RIPPLE_SME_VECLIB)
 
 else()
   message(STATUS "ripple_sme_veclib.h not found - skipping SME tests")
+endif()
 
 target_include_directories(aarch64_perf_tests PRIVATE ${kleidiai_SOURCE_DIR})
 target_compile_options(aarch64_perf_tests PRIVATE -fenable-ripple)

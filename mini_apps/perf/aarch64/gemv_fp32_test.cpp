@@ -50,7 +50,8 @@ void ripple_vecmat_f32_f32_f32p_ssve_fmla(float *a, float *b, float *c, unsigned
         ripple_parallel(B, 0);
         for (size_t ti = 0; ti < n_to_process; ++ti) {
             // load bias
-            float acc = __builtin_nontemporal_load(tile + ti);
+            //float acc = __builtin_nontemporal_load(tile + ti);
+            float acc = tile[ti];
             tile += block_dim;
             for (size_t k_idx = 0; k_idx < k; ++k_idx) {
                 acc += a[k_idx] * tile[k_idx * block_dim + ti];
@@ -84,7 +85,9 @@ template <KernelT KT, unsigned N, unsigned K> class VecmatTest : public Test {
     float B_packed[N_tiles * (K + 1) * BLOCK_DIM]{};
 
 public:
-    VecmatTest(TestFramework &TestFramework) : Test(TestFramework) {
+    VecmatTest(TestFramework &TestFramework) : Test(TestFramework) { }
+
+    void prepare(unsigned) override {
         const size_t nr =
             kai_get_nr_matmul_clamp_f32_f32_f32p2vlx1b_1x8vl_sme_mla();
         const size_t kr =
@@ -116,6 +119,7 @@ public:
             ripple_vecmat_f32_f32_f32p_ssve_fmla(A, B_packed, C, N, K,
                     CLAMP_MIN, CLAMP_MAX);
     }
+
     bool verify() const override {
         return equal(1e-5, C, Ref); 
     }
