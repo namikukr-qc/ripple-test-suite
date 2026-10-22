@@ -47,7 +47,7 @@ set(KLEIDIAI_F32_GEMV_SOURCES
 
 # Ripple source files
 set(RIPPLE_GEMV_SOURCES
-  gemv_fp32_test.cpp
+  gemv_f32_test.cpp
 )
 
 # Only add GEMM tests if ripple_sme_veclib.h is available
