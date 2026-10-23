@@ -49,8 +49,6 @@ void ripple_vecmat_f32_f32_f32p_ssve_fmla(float *a, float *b, float *c, unsigned
         size_t n_to_process = std::min(block_dim, n - n_idx);
         ripple_parallel(B, 0);
         for (size_t ti = 0; ti < n_to_process; ++ti) {
-            // load bias
-            //float acc = __builtin_nontemporal_load(tile + ti);
             float acc = tile[ti];
             tile += block_dim;
             for (size_t k_idx = 0; k_idx < k; ++k_idx) {
@@ -58,7 +56,7 @@ void ripple_vecmat_f32_f32_f32p_ssve_fmla(float *a, float *b, float *c, unsigned
             }
             // clamp and store
             acc = std::max(clamp_min, std::min(clamp_max, acc));
-            __builtin_nontemporal_store(acc, c + n_idx + ti);
+            c[n_idx + ti] = acc;
         }
         tile += stride;
         __builtin_prefetch(a, 0, /*locality*/ 2);
